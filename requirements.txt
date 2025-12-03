@@ -1,5 +1,6 @@
-streamlit==1.29.0
+streamlit
 python-dotenv==1.0.0
-requests==2.31.0
 moviepy==1.0.3
 pandas==2.1.4
+psutil==5.9.6
+keyboard==0.13.5

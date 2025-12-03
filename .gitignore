@@ -45,6 +45,9 @@ tmp/
 # Output folder (transcription results)
 Output/
 
+# Python clients (cloned repository)
+python-clients/
+
 # Audio files (optional - comment out if you want to track them)
 *.mp3
 *.wav

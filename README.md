@@ -18,17 +18,28 @@ Convert MP4 video files to text using NVIDIA's Whisper Large V3 API and Streamli
 
 - Python 3.8 or higher
 - NVIDIA API Key (Get it from [NVIDIA Build](https://build.nvidia.com/))
+- Git (for cloning NVIDIA Riva Python client)
 
 ## Setup
 
-1. **Clone or download this repository**
-
-2. **Install dependencies**
+1. **Clone this repository**
    ```bash
-   pip install -r requirements.txt
+   git clone https://github.com/esaiaswt/MP4AudioToText.git
+   cd MP4AudioToText
    ```
 
-3. **Configure your API key**
+2. **Clone NVIDIA Riva Python client**
+   ```bash
+   git clone https://github.com/nvidia-riva/python-clients.git
+   ```
+
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   pip install -r python-clients/requirements.txt
+   ```
+
+4. **Configure your API key**
    
    Create a `.env` file in the project directory:
    ```
@@ -70,22 +81,23 @@ MP4AudioToText/
 ├── .env.example       # Template for environment variables
 ├── .gitignore         # Git ignore rules
 ├── Output/            # Generated CSV files (not in git)
+├── python-clients/    # NVIDIA Riva Python client (not in git)
 └── README.md          # This file
 ```
 
 ## How It Works
 
 1. **Upload**: User uploads an MP4 video file
-2. **Extract**: The app extracts audio from the video using MoviePy
-3. **Transcribe**: Audio is sent to NVIDIA's Whisper API with timestamp requests
-4. **Process**: Results are parsed and organized with timestamps and speaker identification
+2. **Extract**: The app extracts audio from the video as WAV (16-bit, mono, 16kHz) using MoviePy
+3. **Transcribe**: Audio is sent to NVIDIA's Whisper API via the official Riva Python client with gRPC
+4. **Process**: Results are parsed from JSON with accurate timestamps from the API response
 5. **Save**: Transcription is saved as CSV in the `Output/` folder (named after the MP4 file)
 6. **Display**: Results are shown in a table format with download option
 
 ## CSV Output Format
 
 The generated CSV file contains three columns:
-- **Seconds in video**: Timestamp of when the speech segment starts
+- **Seconds in video**: Timestamp (rounded to nearest second) of when the speech segment ends
 - **Speaker Name/Number**: Identified speaker (e.g., Speaker 1, Speaker 2)
 - **Transcribed text**: The actual transcribed text for that segment
 
@@ -93,11 +105,20 @@ The generated CSV file contains three columns:
 
 - `streamlit` - Web UI framework
 - `python-dotenv` - Environment variable management
-- `requests` - HTTP requests to NVIDIA API
 - `moviepy` - Video/audio processing
 - `pandas` - CSV data handling and table display
+- `psutil` - Process management for quit functionality
+- `keyboard` - Keyboard control for quit functionality
+- `nvidia-riva-client` - Official NVIDIA Riva gRPC client (installed via python-clients)
 
 ## Troubleshooting
+
+### Python Client Not Found
+If you get "Python client not found" error:
+```bash
+git clone https://github.com/nvidia-riva/python-clients.git
+pip install -r python-clients/requirements.txt
+```
 
 ### API Key Not Found
 Make sure your `.env` file exists in the project root and contains:
@@ -125,11 +146,20 @@ pip install -r requirements.txt --upgrade
 - ⚠️ Never commit your `.env` file to version control
 - The `.gitignore` file is configured to exclude `.env` automatically
 - The `Output/` folder (containing transcription results) is also excluded from Git
+- The `python-clients/` folder is also excluded from Git
 - Keep your NVIDIA API key confidential
+
+## Technical Details
+
+- Uses NVIDIA Riva gRPC API via official Python client
+- Audio extracted as 16-bit PCM WAV, mono channel, 16kHz sample rate
+- Supports automatic punctuation and word-level timestamps
+- Segmented output with ~30 second intervals
+- CSV format with rounded timestamps for easy reading
 
 ## API Reference
 
-This app uses the [NVIDIA Whisper Large V3 API](https://build.nvidia.com/openai/whisper-large-v3/api)
+This app uses the [NVIDIA Whisper Large V3 API](https://build.nvidia.com/openai/whisper-large-v3/api) via the official [NVIDIA Riva Python Client](https://github.com/nvidia-riva/python-clients)
 
 ## License
 
@@ -139,4 +169,5 @@ This project is open source and available for personal and commercial use.
 
 For issues related to:
 - NVIDIA API: Visit [NVIDIA Build](https://build.nvidia.com/)
+- NVIDIA Riva Client: Check [python-clients repository](https://github.com/nvidia-riva/python-clients)
 - This application: Open an issue in the repository

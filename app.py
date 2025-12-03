@@ -1,8 +1,12 @@
 import streamlit as st
 import os
-import requests
 import tempfile
 import csv
+import time
+import psutil
+import keyboard
+import subprocess
+import json
 from pathlib import Path
 from dotenv import load_dotenv
 from moviepy.editor import VideoFileClip
@@ -13,13 +17,15 @@ load_dotenv()
 
 # NVIDIA API Configuration
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
-API_URL = "https://integrate.api.nvidia.com/v1/audio/transcriptions"
+RIVA_SERVER = "grpc.nvcf.nvidia.com:443"
+FUNCTION_ID = "b702f636-f60c-4a3d-a6f4-f3568c13bd7d"
+PYTHON_CLIENT_PATH = Path("python-clients/scripts/asr/transcribe_file_offline.py")
 
 def extract_audio_from_mp4(mp4_file):
-    """Extract audio from MP4 file and save as MP3"""
+    """Extract audio from MP4 file and save as WAV (16-bit, mono)"""
     try:
         # Create a temporary file for the audio
-        temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3')
+        temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
         temp_audio_path = temp_audio.name
         temp_audio.close()
         
@@ -28,9 +34,16 @@ def extract_audio_from_mp4(mp4_file):
         temp_video.write(mp4_file.read())
         temp_video.close()
         
-        # Extract audio
+        # Extract audio as WAV (mono, 16-bit)
         video = VideoFileClip(temp_video.name)
-        video.audio.write_audiofile(temp_audio_path, logger=None)
+        video.audio.write_audiofile(
+            temp_audio_path, 
+            codec='pcm_s16le',  # 16-bit PCM
+            fps=16000,          # 16kHz sample rate
+            nbytes=2,           # 2 bytes = 16-bit
+            ffmpeg_params=["-ac", "1"],  # Mono audio
+            logger=None
+        )
         video.close()
         
         # Clean up video file
@@ -42,30 +55,104 @@ def extract_audio_from_mp4(mp4_file):
         return None
 
 def transcribe_audio(audio_file_path):
-    """Transcribe audio using NVIDIA Whisper API with timestamps"""
+    """Transcribe audio using NVIDIA Riva official Python client"""
     try:
-        headers = {
-            "Authorization": f"Bearer {NVIDIA_API_KEY}"
-        }
+        # Check if python client exists
+        if not PYTHON_CLIENT_PATH.exists():
+            st.error("Python client not found. Please run: git clone https://github.com/nvidia-riva/python-clients.git")
+            return None
         
-        with open(audio_file_path, 'rb') as f:
-            files = {
-                'file': (os.path.basename(audio_file_path), f, 'audio/mpeg')
-            }
-            data = {
-                'model': 'whisper-large-v3',
-                'timestamp_granularities[]': 'segment',
-                'response_format': 'verbose_json'
-            }
+        # Build command (output goes to stdout)
+        cmd = [
+            "python",
+            str(PYTHON_CLIENT_PATH),
+            "--server", RIVA_SERVER,
+            "--use-ssl",
+            "--metadata", "function-id", FUNCTION_ID,
+            "--metadata", "authorization", f"Bearer {NVIDIA_API_KEY}",
+            "--language-code", "en",
+            "--input-file", audio_file_path,
+            "--word-time-offsets",  # Enable word timestamps
+            "--output-seglst"  # Output segmented list with timestamps
+        ]
+        
+        # Run the transcription
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minute timeout
+        )
+        
+        if result.returncode != 0:
+            st.error(f"Transcription failed: {result.stderr}")
+            return None
+        
+        # Get transcription from stdout
+        output = result.stdout.strip()
+        
+        if not output:
+            st.error("No transcription output received")
+            return None
+        
+        # Try to parse JSON from output
+        try:
+            # Find JSON in output (it may have other text before/after)
+            json_start = output.find('{')
+            json_end = output.rfind('}') + 1
             
-            response = requests.post(API_URL, headers=headers, files=files, data=data)
-            
-            if response.status_code == 200:
-                result = response.json()
-                return result
+            if json_start >= 0 and json_end > json_start:
+                json_str = output[json_start:json_end]
+                data = json.loads(json_str)
+                
+                # Extract results with timestamps
+                result_data = {
+                    'text': '',
+                    'segments': []
+                }
+                
+                if 'results' in data:
+                    for result_item in data['results']:
+                        if 'alternatives' in result_item and len(result_item['alternatives']) > 0:
+                            alternative = result_item['alternatives'][0]
+                            transcript = alternative.get('transcript', '').strip()
+                            
+                            if transcript:
+                                # Get the audioProcessed time (end time of this segment)
+                                audio_processed = result_item.get('audioProcessed', 0.0)
+                                
+                                result_data['text'] += transcript + ' '
+                                result_data['segments'].append({
+                                    'start': audio_processed,
+                                    'text': transcript
+                                })
+                
+                result_data['text'] = result_data['text'].strip()
+                
+                # If no segments found, fall back to extracting just the final transcript
+                if not result_data['segments'] and result_data['text']:
+                    # Look for "Final transcript:" in output
+                    final_transcript_marker = "Final transcript:"
+                    if final_transcript_marker in output:
+                        final_text = output.split(final_transcript_marker, 1)[1].strip()
+                        result_data['text'] = final_text
+                        result_data['segments'].append({
+                            'start': 0.0,
+                            'text': final_text
+                        })
+                
+                return result_data if result_data['text'] else None
             else:
-                st.error(f"API Error: {response.status_code} - {response.text}")
+                st.error("Could not parse JSON from output")
                 return None
+                
+        except json.JSONDecodeError as e:
+            st.error(f"Failed to parse JSON: {e}")
+            return None
+        
+    except subprocess.TimeoutExpired:
+        st.error("Transcription timed out. The file may be too large.")
+        return None
     except Exception as e:
         st.error(f"Error during transcription: {str(e)}")
         return None
@@ -87,14 +174,14 @@ def save_to_csv(transcription_data, output_filename):
             segments = transcription_data['segments']
             for i, segment in enumerate(segments):
                 rows.append({
-                    'Seconds in video': f"{segment.get('start', 0):.2f}",
+                    'Seconds in video': str(round(segment.get('start', 0))),
                     'Speaker Name/Number': f"Speaker {(i % 5) + 1}",  # Simple speaker numbering
                     'Transcribed text': segment.get('text', '').strip()
                 })
         else:
             # Fallback if no segments available
             rows.append({
-                'Seconds in video': '0.00',
+                'Seconds in video': '0',
                 'Speaker Name/Number': 'Speaker 1',
                 'Transcribed text': transcription_data.get('text', '')
             })
@@ -192,6 +279,18 @@ def main():
     
     # Footer
     st.markdown("---")
+    
+    # Quit button at the bottom
+    if st.button("🚪 Quit Application", type="secondary", use_container_width=True, help="Shutdown the Streamlit server"):
+        # Give a bit of delay for user experience
+        time.sleep(0.5)
+        # Close streamlit browser tab
+        keyboard.press_and_release('ctrl+w')
+        # Terminate streamlit python process
+        pid = os.getpid()
+        p = psutil.Process(pid)
+        p.terminate()
+    
     st.markdown(
         "Powered by [NVIDIA Whisper Large V3](https://build.nvidia.com/openai/whisper-large-v3)"
     )
