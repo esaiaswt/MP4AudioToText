@@ -73,7 +73,9 @@ def transcribe_audio(audio_file_path):
             "--language-code", "en",
             "--input-file", audio_file_path,
             "--word-time-offsets",  # Enable word timestamps
-            "--output-seglst"  # Output segmented list with timestamps
+            "--output-seglst",  # Output segmented list with timestamps
+            "--speaker-diarization",  # Enable speaker diarization
+            "--diarization-max-speakers", "5"  # Max 5 speakers
         ]
         
         # Run the transcription
@@ -121,10 +123,18 @@ def transcribe_audio(audio_file_path):
                                 # Get the audioProcessed time (end time of this segment)
                                 audio_processed = result_item.get('audioProcessed', 0.0)
                                 
+                                # Extract speaker information from words
+                                speaker_tag = None
+                                if 'words' in alternative and len(alternative['words']) > 0:
+                                    # Use the speaker tag from the first word in this segment
+                                    first_word = alternative['words'][0]
+                                    speaker_tag = first_word.get('speakerTag', None)
+                                
                                 result_data['text'] += transcript + ' '
                                 result_data['segments'].append({
                                     'start': audio_processed,
-                                    'text': transcript
+                                    'text': transcript,
+                                    'speaker': speaker_tag
                                 })
                 
                 result_data['text'] = result_data['text'].strip()
@@ -173,9 +183,16 @@ def save_to_csv(transcription_data, output_filename):
         if 'segments' in transcription_data:
             segments = transcription_data['segments']
             for i, segment in enumerate(segments):
+                # Use actual speaker tag if available, otherwise fallback to simple numbering
+                speaker_tag = segment.get('speaker', None)
+                if speaker_tag is not None:
+                    speaker_label = f"Speaker {int(speaker_tag) + 1}"  # Convert 0-based to 1-based
+                else:
+                    speaker_label = f"Speaker {(i % 5) + 1}"  # Fallback to simple numbering
+                
                 rows.append({
                     'Seconds in video': str(round(segment.get('start', 0))),
-                    'Speaker Name/Number': f"Speaker {(i % 5) + 1}",  # Simple speaker numbering
+                    'Speaker Name/Number': speaker_label,
                     'Transcribed text': segment.get('text', '').strip()
                 })
         else:
