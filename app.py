@@ -219,7 +219,14 @@ def main():
         layout="wide"
     )
     
-    st.title("🎬 MP4 Audio to Text Converter")
+    # Header with logo and title
+    col1, col2 = st.columns([2, 5])
+    with col1:
+        if os.path.exists("SOI Logo-Screen-Dark BG.png"):
+            st.image("SOI Logo-Screen-Dark BG.png", width=540)
+    with col2:
+        st.title("🎬 MP4 Audio to Text Converter")
+    
     st.markdown("Convert your MP4 videos to text using NVIDIA's Whisper AI")
     
     # Check if API key is configured
