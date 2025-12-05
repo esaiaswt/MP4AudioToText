@@ -8,11 +8,12 @@ Convert MP4 video files to text using NVIDIA's Whisper Large V3 API and Streamli
 - 🎵 Automatic audio extraction
 - 🤖 AI-powered transcription using NVIDIA Whisper Large V3
 - ⏱️ Timestamp-based segmentation
-- 👥 **Speaker diarization** - Automatically identifies and differentiates between speakers
 - 📊 CSV output with structured data
 - 💾 Automatic saving to Output folder
 - 📥 Download CSV files
 - 🎨 Clean and intuitive Streamlit UI
+
+**Note**: Speaker diarization (voice identification) is NOT supported by the NVIDIA cloud API. Sequential segment numbering is provided for transcript organization only.
 
 ## Prerequisites
 
@@ -98,10 +99,8 @@ MP4AudioToText/
 
 The generated CSV file contains three columns:
 - **Seconds in video**: Timestamp (rounded to nearest second) of when the speech segment ends
-- **Speaker Name/Number**: Automatically identified speaker using AI-powered speaker diarization (e.g., Speaker 1, Speaker 2, etc.). The system can distinguish up to 5 different speakers.
+- **Speaker Name/Number**: Sequential segment identifier (e.g., Segment 1, Segment 2, etc.). Note that this is NOT actual speaker identification - the NVIDIA cloud API does not support speaker diarization. For true speaker identification, you would need to deploy a self-hosted NVIDIA Riva server.
 - **Transcribed text**: The actual transcribed text for that segment
-
-**Note**: Speaker diarization uses NVIDIA Riva's built-in AI capability to analyze voice characteristics and automatically assign speaker labels. This is not based on order but on actual voice patterns.
 
 ## Dependencies
 

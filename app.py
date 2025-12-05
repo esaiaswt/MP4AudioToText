@@ -63,6 +63,8 @@ def transcribe_audio(audio_file_path):
             return None
         
         # Build command (output goes to stdout)
+        # Note: Speaker diarization is NOT supported by the NVIDIA cloud API
+        # It requires a self-hosted Riva server
         cmd = [
             "python",
             str(PYTHON_CLIENT_PATH),
@@ -73,9 +75,7 @@ def transcribe_audio(audio_file_path):
             "--language-code", "en",
             "--input-file", audio_file_path,
             "--word-time-offsets",  # Enable word timestamps
-            "--output-seglst",  # Output segmented list with timestamps
-            "--speaker-diarization",  # Enable speaker diarization
-            "--diarization-max-speakers", "5"  # Max 5 speakers
+            "--output-seglst"  # Output segmented list with timestamps
         ]
         
         # Run the transcription
@@ -107,10 +107,6 @@ def transcribe_audio(audio_file_path):
                 json_str = output[json_start:json_end]
                 data = json.loads(json_str)
                 
-                # Debug: Show JSON structure in expandable section
-                with st.expander("🔍 Debug: View JSON Response Structure"):
-                    st.json(data)
-                
                 # Extract results with timestamps
                 result_data = {
                     'text': '',
@@ -127,22 +123,10 @@ def transcribe_audio(audio_file_path):
                                 # Get the audioProcessed time (end time of this segment)
                                 audio_processed = result_item.get('audioProcessed', 0.0)
                                 
-                                # Extract speaker information from words
-                                speaker_tag = None
-                                if 'words' in alternative and len(alternative['words']) > 0:
-                                    # Use the speaker tag from the first word in this segment
-                                    first_word = alternative['words'][0]
-                                    speaker_tag = first_word.get('speakerTag', None)
-                                    
-                                    # Debug: Log speaker detection
-                                    if speaker_tag is not None:
-                                        st.info(f"✓ Speaker detected: Speaker {int(speaker_tag) + 1} at {audio_processed:.1f}s")
-                                
                                 result_data['text'] += transcript + ' '
                                 result_data['segments'].append({
                                     'start': audio_processed,
-                                    'text': transcript,
-                                    'speaker': speaker_tag
+                                    'text': transcript
                                 })
                 
                 result_data['text'] = result_data['text'].strip()
@@ -191,12 +175,9 @@ def save_to_csv(transcription_data, output_filename):
         if 'segments' in transcription_data:
             segments = transcription_data['segments']
             for i, segment in enumerate(segments):
-                # Use actual speaker tag if available, otherwise fallback to simple numbering
-                speaker_tag = segment.get('speaker', None)
-                if speaker_tag is not None:
-                    speaker_label = f"Speaker {int(speaker_tag) + 1}"  # Convert 0-based to 1-based
-                else:
-                    speaker_label = f"Speaker {(i % 5) + 1}"  # Fallback to simple numbering
+                # Note: Speaker identification is not supported by NVIDIA cloud API
+                # Sequential numbering is used as placeholder for CSV structure compatibility
+                speaker_label = f"Segment {i + 1}"
                 
                 rows.append({
                     'Seconds in video': str(round(segment.get('start', 0))),
@@ -207,7 +188,7 @@ def save_to_csv(transcription_data, output_filename):
             # Fallback if no segments available
             rows.append({
                 'Seconds in video': '0',
-                'Speaker Name/Number': 'Speaker 1',
+                'Speaker Name/Number': 'Segment 1',
                 'Transcribed text': transcription_data.get('text', '')
             })
         
@@ -249,9 +230,6 @@ def main():
         type=['mp4'],
         help="Select an MP4 video file to transcribe"
     )
-    
-    # Configure max upload size to 2GB
-    st.set_option('server.maxUploadSize', 2048)
     
     if uploaded_file is not None:
         # Display file info
