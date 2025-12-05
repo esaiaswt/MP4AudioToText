@@ -107,6 +107,10 @@ def transcribe_audio(audio_file_path):
                 json_str = output[json_start:json_end]
                 data = json.loads(json_str)
                 
+                # Debug: Show JSON structure in expandable section
+                with st.expander("🔍 Debug: View JSON Response Structure"):
+                    st.json(data)
+                
                 # Extract results with timestamps
                 result_data = {
                     'text': '',
@@ -129,6 +133,10 @@ def transcribe_audio(audio_file_path):
                                     # Use the speaker tag from the first word in this segment
                                     first_word = alternative['words'][0]
                                     speaker_tag = first_word.get('speakerTag', None)
+                                    
+                                    # Debug: Log speaker detection
+                                    if speaker_tag is not None:
+                                        st.info(f"✓ Speaker detected: Speaker {int(speaker_tag) + 1} at {audio_processed:.1f}s")
                                 
                                 result_data['text'] += transcript + ' '
                                 result_data['segments'].append({
@@ -241,6 +249,9 @@ def main():
         type=['mp4'],
         help="Select an MP4 video file to transcribe"
     )
+    
+    # Configure max upload size to 2GB
+    st.set_option('server.maxUploadSize', 2048)
     
     if uploaded_file is not None:
         # Display file info
